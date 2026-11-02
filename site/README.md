@@ -1,24 +1,24 @@
-# Chữ không dấu Studio
+# Chữ không dấu Studio — local n-gram
 
-Trang độc lập, HTML/CSS/JavaScript, không cần build. Mở `index.html` hoặc phục vụ thư mục `site/` bằng máy chủ tĩnh. Giao diện không thay thế playground Python hiện có.
+Serve `site/` or repository root over HTTP(S); the model requires fetch and Web Worker, so opening `file://` is unsupported. The root `index.html` references `site/` assets; the Pages workflow serves `site/` directly. Keep both entrypoints synchronized.
 
-- Hai ô chỉnh sửa, đồng bộ hai chiều, nút sao chép riêng, Ctrl+Enter để thêm dấu.
-- ASCII: NFKD, bỏ combining marks, đ/Đ -> d/D, chuẩn hóa dấu câu; chỉ giữ U+0020–007E, LF và TAB. Emoji, ký tự điều khiển, zero-width và các chữ ngoài ASCII bị loại. Đây là chuyển đổi có mất dữ liệu.
-- Khôi phục cục bộ dùng bảng từ nom-vn và một số cụm từ bổ sung; KHÔNG phải mô hình AI hay khôi phục chính xác tuyệt đối. Từ lạ giữ nguyên; cần biên tập tên riêng và từ đa nghĩa.
-- AI tùy chọn: người dùng cung cấp URL máy chủ nom-vn đang chạy với backend HF. Chỉ nút Thêm dấu gửi POST `/api/tools/diacritic/restore` với `{text, backend:"hf"}`. Máy chủ phải cho phép CORS. Không có máy chủ AI công cộng đi kèm.
-- Kết quả AI phải giữ nguyên chuỗi ASCII đầu vào; nếu mô hình sửa chữ/khoảng trắng thì giao diện từ chối áp dụng.
-- Không localStorage, sessionStorage, cookie, phân tích hành vi hay lịch sử văn bản. Làm lại hủy request, xóa hai ô và URL API. Không thể thu hồi clipboard hoặc dữ liệu đã gửi tới API bên ngoài.
+## Architecture
 
-## Kiểm thử
+- `restorer-core.js`: multi-candidate dictionary from real Underthesea unigram counts, exact bigram Viterbi, lossless spans, numeric context, English trie guard, `RevisionGate` and AI output validator.
+- `models/underthesea-bigram-v1.json.gz`: pinned real upstream statistical model, not hand-written sample counts.
+- `restorer-worker.js`: one lazy model load, gzip decompression, SHA-256 verification, computation outside the UI thread.
+- `restorers.js`: interchangeable `LocalRestorer` / `AIRestorer` protocol: `restore(text, {signal}) -> Promise<{restored, backend, ...}>`.
+- `app.js`: immediate raw input state; local debounce 100 ms; optional AI debounce 1,200 ms; manual edits/reset cancel outstanding work. Model or worker errors are shown explicitly without pretending the old dictionary is an n-gram engine.
 
-`node site/test.cjs` từ thư mục gốc repo. Kiểm tra toàn bộ BMP, ASCII idempotence, Unicode tổ hợp, hoa/thường, khoảng trắng, gợi ý dấu.
+## Privacy and text contracts
 
-Đã kiểm tra trình duyệt: gợi ý dấu, chuyển ngược có emoji và dấu ngoặc cong, sao chép clipboard, làm lại. Chưa kiểm thử mô hình HF thực tế vì không có máy chủ API được cấu hình.
+No storage of text, analytics or clipboard injection. English protection is conservative and heuristic. The core preserves already accented syllables; the ASCII-only input intentionally normalizes everything to printable ASCII plus tab/LF. AI requires a compatible nom-vn server and CORS. Local suggestions remain available before AI; AI cannot silently rewrite characters, whitespace, URLs, emails, English-guarded tokens or already accented syllables. Browser model caches may persist model bytes, never entered text.
 
-## GitHub Pages
+## Validation
 
-Workflow `chukhongdau-pages.yml` triển khai riêng thư mục site. Bật Settings → Pages → Source: GitHub Actions rồi chạy workflow. Giữ nguyên các thư mục và workflow hiện có của upstream.
+```
+node site/test.cjs
+node site/test-async.cjs
+```
 
-## Bản quyền
-
-Kế thừa bảng từ `src/nom/text/normalize.py` của nrl-ai/nom-vn, Apache-2.0. Phần giao diện và bổ sung: Long Ngo. Xem LICENSE của repo.
+Tests cover contextual ambiguity, mixed accents, NFC/NFD, ASCII invariance, punctuation/paragraph boundaries, numeric context, URLs/emails/identifiers, English phrases, Viterbi future evidence, worker cancellation, stale results and AI output constraints. This is a regression suite, not an independent accuracy benchmark. See `SOURCES.md` for provenance, licenses, reproduction and limitations.
