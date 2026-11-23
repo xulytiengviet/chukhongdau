@@ -27,3 +27,9 @@
 Upstream Python benchmarks are not browser guarantees. Local Node measurements and regression tests do not establish general Vietnamese accuracy. Proper nouns, semantic ambiguity and Vietnamese/English homographs can still fail. No claimed confidence percentages. No clipboard injection, keyboard hooks or IME integration is used in this webpage.
 
 The model is loaded once per Web Worker from the same origin. No typed text leaves the browser in local mode. AI runs only on button click in AI mode, or after 1.2 seconds of inactivity if the user explicitly enables auto-AI. External server storage policies apply to AI. Requests carry cancellation plus revision/raw snapshot checks. Clearing or manual Unicode editing invalidates pending results.
+
+## ViCare-Safe
+
+The optional chat expansion table adapts a subset of `vicare_safe/text.py` at
+[ViCare-Safe d0aaeb9](https://github.com/chinguyenkhac/ViCare/blob/d0aaeb9c618afe206dd8b17f9ab37a4593692fd3/vicare_safe/text.py).
+See [the MIT notice](vendor/VICARE-LICENSE.txt). No ViHealthQA records, retrieval models or clinical outputs are distributed.

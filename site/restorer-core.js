@@ -29,6 +29,24 @@ function tokenize(text){
  if(run.some(k=>strong.has(parts[k].lower)))for(const k of run){if(!(mixedLeft||mixedRight)||strong.has(parts[k].lower))parts[k].english=true;}i=j+1;}
  return parts;
 }
+// Adapted subset of ViCare-Safe's MIT-licensed TEENCODE table (see SOURCES.md).
+const chatWords=new Map(Object.entries({
+ ko:'không',hok:'không',khum:'không',j:'gì',ji:'gì',dc:'được',dk:'được',
+ bs:'bác sĩ',bsi:'bác sĩ',bv:'bệnh viện',ntn:'như thế nào',mn:'mọi người',
+ mik:'mình',cx:'cũng',trc:'trước',tks:'cảm ơn',thks:'cảm ơn'
+}));
+function expandChat(text){
+ const changes=[];
+ const normalized=tokenize(text).map(part=>{
+  const replacement=chatWords.get(part.lower);
+  if(!replacement || part.english || part.raw===part.raw.toUpperCase())return part.raw;
+  const value=part.raw[0]===part.raw[0].toUpperCase()
+   ?replacement[0].toUpperCase()+replacement.slice(1):replacement;
+  changes.push({raw:part.raw,value});
+  return value;
+ }).join('');
+ return {normalized,changes};
+}
 class BigramRestorer{
  constructor(model){
   if(model.format!==1||model.words.length!==model.counts.length)throw Error('Định dạng mô hình không hợp lệ');
@@ -42,26 +60,48 @@ class BigramRestorer{
  probability(id){return id<0?1/(this.total+this.size):this.unigram[id];}
  transition(a,b){const n=a<0||b<0?0:this.bigram.get(a*this.size+b)||0;return Math.log(.8*(n/(this.counts[a]||1))+.2*this.probability(b));}
  decode(options){
-  let scores=options[0].map(id=>Math.log(this.probability(id)));const back=[];
+  let scores=options[0].map(id=>Math.log(this.probability(id)));const forward=[scores],back=[];
   for(let i=1;i<options.length;i++){
-   const layer=[],parents=[];for(const cur of options[i]){let best=-Infinity,parent=0;for(let j=0;j<options[i-1].length;j++){const s=scores[j]+this.transition(options[i-1][j],cur);if(s>best){best=s;parent=j;}}layer.push(best);parents.push(parent);}back.push(parents);scores=layer;
+   const layer=[],parents=[];for(const cur of options[i]){let best=-Infinity,parent=0;for(let j=0;j<options[i-1].length;j++){const s=scores[j]+this.transition(options[i-1][j],cur);if(s>best){best=s;parent=j;}}layer.push(best);parents.push(parent);}back.push(parents);scores=layer;forward.push(scores);
   }
   let k=scores.indexOf(Math.max(...scores));const path=[options.at(-1)[k]];
-  for(let i=options.length-2;i>=0;i--){k=back[i][k];path.push(options[i][k]);}return path.reverse();
+  for(let i=options.length-2;i>=0;i--){k=back[i][k];path.push(options[i][k]);}path.reverse();
+  // Compare the best complete paths constrained to each spelling at this position.
+  let suffix=options.at(-1).map(()=>0);
+  const margins=new Array(path.length);
+  for(let i=path.length-1;i>=0;i--){
+   let alternative=-Infinity;
+   const chosen=options[i].indexOf(path[i]);
+   for(let j=0;j<options[i].length;j++){
+    if(j!==chosen)alternative=Math.max(alternative,forward[i][j]+suffix[j]);
+   }
+   margins[i]=forward[i][chosen]+suffix[chosen]-alternative;
+   if(i>0)suffix=options[i-1].map(prev=>{
+    let best=-Infinity;
+    for(let j=0;j<options[i].length;j++)
+     best=Math.max(best,this.transition(prev,options[i][j])+suffix[j]);
+    return best;
+   });
+  }
+  return {path,margins};
  }
- restore(text){
-  const begin=performance.now(),parts=tokenize(text),unknown=new Set(),ambiguous=new Set();let chain=[];
-  const flush=()=>{if(!chain.length)return;const choices=chain.map(p=>this.candidates(p));const path=this.decode(choices);
-   chain.forEach((p,i)=>{if(p.kind==='word'&&!p.accented&&path[i]>=0)p.output=caseLike(p.raw,this.words[path[i]]);});chain=[];};
+ restore(text,{cautious=false}={}){
+  const begin=performance.now(),parts=tokenize(text),unknown=new Set(),ambiguous=new Set();const levels={high:0,medium:0,low:0},review=new Set();let chain=[];
+  const flush=()=>{if(!chain.length)return;const choices=chain.map(p=>this.candidates(p));const {path,margins}=this.decode(choices);
+   chain.forEach((p,i)=>{if(p.kind!=='word'||p.accented||path[i]<0)return;
+    const level=margins[i]<Math.log(2)?'low':margins[i]<Math.log(8)?'medium':'high';
+    levels[level]++;
+    if(level==='low')review.add(p.raw);
+    if(!cautious||level!=='low')p.output=caseLike(p.raw,this.words[path[i]]);});chain=[];};
   for(const p of parts){
    if(p.kind==='gap')continue;
    if((p.kind!=='word'&&p.kind!=='number')||p.english){flush();continue;}
-   const options=this.candidates(p);if(p.kind==='word'&&options[0]===-1&&!p.accented){unknown.add(p.raw);flush();continue;}
+   const options=this.candidates(p);if(p.kind==='word'&&options[0]===-1&&!p.accented){unknown.add(p.raw);levels.low++;review.add(p.raw);flush();continue;}
    if(options.length>1)ambiguous.add(p.raw);chain.push(p);
   }flush();
   const restored=parts.map(p=>p.output??p.raw).join('');
   if(strip(restored)!==strip(text))throw Error('Bộ giải mã đã thay đổi chữ gốc');
-  return {restored,backend:'local-ngram',unknown:[...unknown],ambiguous:[...ambiguous],elapsedMs:performance.now()-begin};
+  return {restored,backend:'local-ngram',levels,review:[...review],unknown:[...unknown],ambiguous:[...ambiguous],elapsedMs:performance.now()-begin};
  }
 }
 function validateAI(input,output){
@@ -72,6 +112,6 @@ function validateAI(input,output){
 }
 // A result is committable only while both the revision and the raw snapshot match.
 class RevisionGate{constructor(){this.revision=0;this.raw='';}begin(raw){this.raw=raw;return {revision:++this.revision,raw};}current(ticket){return ticket.revision===this.revision&&ticket.raw===this.raw;}}
-const api={strip,tokenize,BigramRestorer,WordTrie,validateAI,RevisionGate};
+const api={strip,expandChat,tokenize,BigramRestorer,WordTrie,validateAI,RevisionGate};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.RestorationCore=api;
 })(globalThis);
