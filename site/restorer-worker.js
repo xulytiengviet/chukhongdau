@@ -1,5 +1,5 @@
 /* One model load per worker. No text persistence or external inference. */
-importScripts('restorer-core.js?v=ngram1');
+importScripts('restorer-core.js?v=context2');
 let enginePromise;
 function load(){
  if(!enginePromise)enginePromise=(async()=>{
@@ -20,6 +20,6 @@ onmessage=async({data})=>{
  if(data.type==='cancel'){newest=data.id;return;}
  newest=data.id;
  try{const engine=await load();if(data.id!==newest)return;
-  postMessage({id:data.id,result:engine.restore(data.text)});
+  postMessage({id:data.id,result:engine.restore(data.text,{cautious:data.cautious})});
  }catch(e){if(data.id===newest)postMessage({id:data.id,error:e.message});}
 };

@@ -2,7 +2,7 @@ name: Chukhongdau Pages
 on:
   push:
     branches: [main]
-    paths: ['site/**', '.github/workflows/chukhongdau-pages.yml']
+    paths: ['site/**', 'scripts/benchmark-browser-chat.cjs', 'benchmarks/data/diacritic_eval_v0.txt', '.github/workflows/chukhongdau-pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node site/test.cjs && node site/test-async.cjs
+      - run: node site/test.cjs && node site/test-async.cjs && node scripts/benchmark-browser-chat.cjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

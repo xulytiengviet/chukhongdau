@@ -40,3 +40,13 @@ const gate=new RevisionGate(),old=gate.begin('old'),fresh=gate.begin('new');asse
 const times=[];for(let i=0;i<500;i++){const t=performance.now();restore(cases[i%15][0]);times.push(performance.now()-t);}times.sort((a,b)=>a-b);
 const long='Hom nay troi dep qua. '.repeat(900);const t=performance.now();assert.equal(clean(restore(long)),long);const longMs=performance.now()-t;
 console.log(JSON.stringify({tests:'PASS',cases:cases.length,model:{unigrams:model.words.length,bigrams:model.bigrams.length},initMs,p50Ms:times[250],p95Ms:times[475],longChars:long.length,longMs,environment:process.version},null,2));
+
+const expand=s=>ctx.RestorationCore.expandChat(s).normalized;
+assert.equal(expand('Bs  ko dc j?'), 'Bác sĩ  không được gì?');
+assert.equal(expand('BS DC J kg vitamin K foo_dc https://vn.test/ko dc@example.vn'), 'BS DC J kg vitamin K foo_dc https://vn.test/ko dc@example.vn');
+const tied=new BigramRestorer({format:1,words:['á','à'],counts:[1,1],bigrams:[]});
+assert.equal(tied.restore('a',{cautious:true}).restored,'a');
+assert.equal(tied.restore('a').levels.low,1);
+// The winning path switches to á, but wins by less than a factor of two.
+assert.equal(toy.restore('a b',{cautious:true}).restored,'a b');
+assert.equal(engine.restore('xyzzy xyzzy').levels.low,2);
